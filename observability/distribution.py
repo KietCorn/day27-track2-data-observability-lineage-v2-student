@@ -18,6 +18,8 @@ def detect_distribution_shift(
     """
     cur = np.asarray(list(current_values), dtype=float)
     base = np.asarray(list(baseline_values), dtype=float)
+    cur = cur[np.isfinite(cur)]
+    base = base[np.isfinite(base)]
     if cur.size == 0 or base.size == 0:
         return {"is_anomaly": False, "score": 0.0, "method": "mean_ratio", "reason": "empty_input"}
     cur_mean = float(np.mean(cur))

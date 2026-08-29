@@ -29,9 +29,15 @@ def detect_text_length_shift(
 def detect_embedding_norm_shift(
     current_norms: Iterable[float], baseline_norms: Iterable[float]
 ) -> dict[str, Any]:
-    """TODO(student): implement embedding-space drift signal.
-
-    No embedding model is required for the starter lab. Hidden evaluation can
-    feed precomputed norms/similarities through this stable interface.
-    """
-    return {"is_anomaly": False, "score": 0.0, "method": "not_implemented"}
+    current = np.asarray(list(current_norms), dtype=float)
+    baseline = np.asarray(list(baseline_norms), dtype=float)
+    current = current[np.isfinite(current)]
+    baseline = baseline[np.isfinite(baseline)]
+    if current.size == 0 or baseline.size == 0:
+        return {"is_anomaly": False, "score": 0.0, "method": "mad", "reason": "empty_input",
+                "metric": "embedding_norm", "current_mean": float(np.mean(current)) if current.size else 0.0}
+    result = zscore_detector(float(np.mean(current)), baseline)
+    result["metric"] = "embedding_norm"
+    result["current_mean"] = float(np.mean(current))
+    result["baseline_mean"] = float(np.mean(baseline))
+    return result

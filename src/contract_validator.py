@@ -100,7 +100,28 @@ def validate_dataframe(df: pd.DataFrame, contract: dict[str, Any]) -> list[dict[
                 )
             )
 
-        # Starter numeric range support. Type validation is intentionally minimal.
+        declared_type = rules.get("type")
+        if declared_type:
+            non_null = series.dropna()
+            if declared_type == "integer":
+                numeric = pd.to_numeric(non_null, errors="coerce")
+                valid = numeric.notna() & numeric.map(float).map(pd.api.types.is_number)
+                valid &= numeric.map(lambda value: float(value).is_integer() if pd.notna(value) else False)
+                valid &= ~non_null.map(lambda value: isinstance(value, (bool, pd.BooleanDtype)))
+            elif declared_type == "number":
+                numeric = pd.to_numeric(non_null, errors="coerce")
+                valid = numeric.notna() & numeric.map(lambda value: pd.notna(value) and bool(pd.api.types.is_number(value)))
+            elif declared_type == "string":
+                valid = non_null.map(lambda value: isinstance(value, str))
+            elif declared_type == "datetime":
+                valid = pd.to_datetime(non_null, errors="coerce", utc=True).notna()
+            else:
+                valid = pd.Series(True, index=non_null.index)
+            invalid_count = int((~valid).sum())
+            issues.append(_issue("type", column=column, severity=severity,
+                                 passed=invalid_count == 0,
+                                 details=f"expected={declared_type}; invalid_count={invalid_count}"))
+
         if "min" in rules or "max" in rules:
             numeric = pd.to_numeric(series, errors="coerce")
             invalid = pd.Series(False, index=series.index)
@@ -119,9 +140,26 @@ def validate_dataframe(df: pd.DataFrame, contract: dict[str, Any]) -> list[dict[
                 )
             )
 
-    # TODO(student): validate contract-level freshness using contract['freshness'].
-    # TODO(student): validate declared data types. pd.to_numeric(..., errors='coerce')
-    #                can silently hide string/type drift if you do not check it explicitly.
+    freshness = contract.get("freshness") or {}
+    freshness_column = freshness.get("column")
+    if freshness_column:
+        severity = freshness.get("severity", "warning")
+        if freshness_column not in df.columns:
+            issues.append(_issue("freshness", column=freshness_column, severity=severity,
+                                 passed=False, details="freshness_column_missing"))
+        else:
+            timestamps = pd.to_datetime(df[freshness_column], errors="coerce", utc=True)
+            invalid_count = int(timestamps.isna().sum())
+            if invalid_count:
+                issues.append(_issue("freshness", column=freshness_column, severity=severity,
+                                     passed=False, details=f"invalid_timestamp_count={invalid_count}"))
+            else:
+                reference = timestamps.max()
+                delay = (reference - timestamps).dt.total_seconds().max() / 60
+                max_delay = float(freshness.get("max_delay_minutes", 0))
+                issues.append(_issue("freshness", column=freshness_column, severity=severity,
+                                     passed=bool(delay <= max_delay),
+                                     details=f"batch_span_minutes={delay:.3f}; max_delay_minutes={max_delay:g}"))
 
     return issues
 

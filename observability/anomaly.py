@@ -39,7 +39,9 @@ def mad_detector(current: float, history: Iterable[float], threshold: float = 3.
     median = float(np.median(values))
     mad = float(np.median(np.abs(values - median)))
     if mad == 0:
-        return {"is_anomaly": False, "score": 0.0, "method": "mad", "reason": "mad_is_zero_todo"}
+        different = float(current) != median
+        return {"is_anomaly": different, "score": float("inf") if different else 0.0,
+                "method": "mad", "reason": "constant_baseline"}
     modified_z = 0.6745 * abs(float(current) - median) / mad
     return {
         "is_anomaly": bool(modified_z > threshold),
@@ -70,11 +72,19 @@ def detect_anomaly(
     """
     if method == "mad":
         return mad_detector(current, history)
-    if method in {"zscore", "auto"}:
-        result = zscore_detector(current, history, threshold=threshold)
-        if method == "auto":
-            result["method"] = "auto:zscore"
-            if context:
-                result["reason"] += "; context_ignored_by_starter=true"
+    if method == "zscore":
+        return zscore_detector(current, history, threshold=threshold)
+    if method == "auto":
+        selected_history = history
+        baseline_name = "all_history"
+        if context and context.get("same_segment_history"):
+            selected_history = context["same_segment_history"]
+            baseline_name = "same_segment_history"
+        values = list(selected_history)
+        result = mad_detector(current, values, threshold=max(3.5, threshold)) if len(values) >= 5 else zscore_detector(current, values, threshold=threshold)
+        result["method"] = f"auto:{result['method']}"
+        result["reason"] += f"; baseline={baseline_name}"
+        if context and context.get("known_event"):
+            result["reason"] += "; known_event=true"
         return result
     raise ValueError(f"Unsupported method: {method}")

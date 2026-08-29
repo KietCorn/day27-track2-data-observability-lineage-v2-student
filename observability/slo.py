@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import math
 
 
 def calculate_slo(target: float, bad_events: int, total_events: int) -> dict[str, Any]:
@@ -37,15 +38,19 @@ def evaluate_multiwindow_burn(
     long_window_burn: float,
     policy: str = "starter",
 ) -> dict[str, Any]:
-    """TODO(student): implement a real multi-window burn-rate policy.
-
-    Starter intentionally never pages. Hidden evaluation contains cases that
-    require distinguishing sustained fast burn from a transient spike.
-    """
-    return {
-        "page": False,
-        "severity": "info",
-        "reason": "starter_policy_not_implemented",
-        "short_window_burn": short_window_burn,
-        "long_window_burn": long_window_burn,
-    }
+    """Evaluate a two-window fast-burn policy."""
+    if not all(math.isfinite(float(value)) and float(value) >= 0 for value in (short_window_burn, long_window_burn)):
+        raise ValueError("burn rates must be finite and non-negative")
+    fast_threshold, sustained_threshold = 14.0, 2.0
+    page = short_window_burn >= fast_threshold and long_window_burn >= sustained_threshold
+    if page:
+        severity = "critical"
+        reason = f"sustained_fast_burn short>={fast_threshold} and long>={sustained_threshold}"
+    elif short_window_burn >= fast_threshold:
+        severity = "warning"
+        reason = "transient_fast_burn_short_window_only"
+    else:
+        severity = "info"
+        reason = "burn_within_policy"
+    return {"page": page, "severity": severity, "reason": reason,
+            "short_window_burn": short_window_burn, "long_window_burn": long_window_burn}
